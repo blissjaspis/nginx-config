@@ -32,6 +32,10 @@ echo
 # Example management commands
 echo "=== Site Management Examples ==="
 echo
+echo "# Fix permissions (important after creating sites!):"
+echo "sudo $NGINX_MANAGER fix-permissions /var/www/laravel-app"
+echo "sudo $NGINX_MANAGER fix-permissions /var/www/portfolio"
+echo
 echo "# Enable a site:"
 echo "sudo $NGINX_MANAGER enable laravel-app.local"
 echo

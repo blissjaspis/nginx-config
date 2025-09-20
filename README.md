@@ -50,6 +50,26 @@ sudo ./nginx-manager.sh create-static static.example.com /var/www/static-site
 sudo ./nginx-manager.sh create-nodejs api.example.com 3000
 ```
 
+### Fixing Permissions
+
+Nginx needs read access to your website files. Fix permissions after creating a site:
+
+```bash
+# Fix permissions using group method (recommended)
+sudo ./nginx-manager.sh fix-permissions /var/www/myapp
+
+# Check permissions without fixing
+sudo ./nginx-manager.sh fix-permissions --check-only /var/www/myapp
+
+# Use custom nginx user (if different from default)
+sudo ./nginx-manager.sh fix-permissions --nginx-user www-data /var/www/myapp
+```
+
+**Permission Methods:**
+- `group` (default): Adds nginx user to file owner's group
+- `owner`: Changes file ownership to nginx user
+- `world`: Makes files world-readable (less secure)
+
 ### Managing Sites
 
 Enable a site:
@@ -175,6 +195,37 @@ sudo ./nginx-manager.sh test && sudo ./nginx-manager.sh reload
 ```
 /etc/nginx/sites-available/  # Configuration files
 /etc/nginx/sites-enabled/    # Symbolic links to enabled sites
+```
+
+## Permissions
+
+### Nginx User and File Access
+
+Nginx typically runs as user `nginx` (or `www-data` on Ubuntu/Debian). If your website files are owned by a different user (like your development user), nginx won't be able to read them.
+
+**The issue:** `user nginx;` in nginx.conf vs. file owner `jaspis`
+
+**Solutions:**
+1. **Group method (recommended):** Add nginx user to your file owner's group
+2. **Ownership method:** Change file ownership to nginx user
+3. **World-readable:** Make files readable by everyone (less secure)
+
+Use the `fix-permissions` command to resolve this automatically.
+
+### Example Permission Fix
+
+```bash
+# Your files are owned by 'jaspis'
+ls -la /var/www/myapp
+# drwxr-xr-x  jaspis jaspis ...
+
+# Nginx runs as 'nginx' user
+ps aux | grep nginx
+# nginx: master process ...
+
+# Fix permissions
+sudo ./nginx-manager.sh fix-permissions /var/www/myapp
+# This adds 'nginx' user to 'jaspis' group and sets proper permissions
 ```
 
 ## Requirements

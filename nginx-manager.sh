@@ -362,6 +362,7 @@ COMMANDS:
     create-nodejs     Create Node.js application configuration
     enable            Enable a site
     disable           Disable a site
+    fix-permissions   Fix file permissions for nginx access
     test              Test nginx configuration
     reload            Reload nginx configuration
     list              List available and enabled sites
@@ -376,6 +377,12 @@ EXAMPLES:
     # Create Node.js site
     $0 create-nodejs api.example.com 3000
 
+    # Fix permissions (recommended method)
+    $0 fix-permissions /var/www/myapp
+
+    # Fix permissions with custom nginx user
+    $0 fix-permissions --nginx-user www-data /var/www/myapp
+
     # Enable a site
     $0 enable example.com
 
@@ -387,6 +394,8 @@ EXAMPLES:
 
 OPTIONS:
     --php-version VERSION    PHP version for Laravel (default: 8.1)
+    --nginx-user USER        Nginx user for permissions (default: auto-detect)
+    --method METHOD          Permission fix method: group, owner, world (default: group)
     --help, -h              Show this help message
 
 EOF
@@ -447,6 +456,11 @@ main() {
             create_nodejs_config "$2" "$3"
             enable_site "$2"
             test_config
+            ;;
+
+        fix-permissions)
+            shift
+            "$SCRIPT_DIR/fix-permissions.sh" "$@"
             ;;
 
         enable)
