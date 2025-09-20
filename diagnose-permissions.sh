@@ -116,9 +116,41 @@ diagnose_path() {
     ps aux | grep nginx | grep -v grep || echo "  No nginx processes found"
     echo ""
 
-    # Recommendations
-    echo "Recommendations:"
+    # Check for parent directory issues
+    local has_parent_issue=false
     local owner=$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path")
+    local current="$path"
+    for i in {1..5}; do
+        current="$(dirname "$current")"
+        if [ "$current" = "/" ]; then
+            break
+        fi
+
+        local parent_perms=$(stat -c '%a' "$current" 2>/dev/null || stat -f '%Lp' "$current" | cut -c -3 2>/dev/null || echo "000")
+        local parent_owner=$(stat -c '%U' "$current" 2>/dev/null || stat -f '%Su' "$current" 2>/dev/null || echo "unknown")
+
+        # Check if parent directory blocks group access
+        if [ "$parent_owner" = "$owner" ] && [ "${parent_perms:1:1}" = "0" ] && [ "${parent_perms:2:1}" = "0" ]; then
+            has_parent_issue=true
+            echo ""
+            echo "⚠️  PARENT DIRECTORY ISSUE DETECTED:"
+            echo "   Directory: $current"
+            echo "   Permissions: $parent_perms (should be 755 for group access)"
+            echo "   This prevents nginx from accessing $path even when in the correct group!"
+            break
+        fi
+    done
+
+    # Recommendations
+    echo ""
+    echo "Recommendations:"
+
+    if [ "$has_parent_issue" = true ]; then
+        echo "  🔥 CRITICAL: Fix parent directory permissions first:"
+        echo "     sudo chmod 755 $current"
+        echo ""
+    fi
+
     echo "  1. Add $nginx_user to group '$owner':"
     echo "     sudo usermod -a -G $owner $nginx_user"
     echo ""

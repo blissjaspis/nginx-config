@@ -121,6 +121,29 @@ fix_permissions_group() {
         return 1
     fi
 
+    # CRITICAL FIX: Fix parent directory permissions
+    # The issue is that parent directories may not allow group access
+    log_info "Fixing parent directory permissions for access..."
+    local current="$path"
+    for i in {1..5}; do
+        current="$(dirname "$current")"
+        if [ "$current" = "/" ]; then
+            break
+        fi
+
+        # Check if parent directory allows group access
+        local parent_perms=$(stat -c '%a' "$current" 2>/dev/null || stat -f '%Lp' "$current" | cut -c -3 2>/dev/null || echo "000")
+        local parent_owner=$(stat -c '%U' "$current" 2>/dev/null || stat -f '%Su' "$current" 2>/dev/null || echo "unknown")
+
+        # If parent is owned by the same user and doesn't allow group access, fix it
+        if [ "$parent_owner" = "$file_owner" ] && [ "${parent_perms:1:1}" = "0" ] && [ "${parent_perms:2:1}" = "0" ]; then
+            log_info "Fixing parent directory: $current (was ${parent_perms}, setting to 755)"
+            if ! chmod 755 "$current"; then
+                log_warning "Could not fix permissions for parent directory: $current"
+            fi
+        fi
+    done
+
     # Set group ownership to file owner's group
     log_info "Setting group ownership to $file_owner"
     if ! chown -R "$file_owner:$file_owner" "$path"; then
@@ -324,13 +347,23 @@ main() {
         else
             log_error "Failed to fix permissions automatically"
             log_info "Manual fix commands (run these as root):"
+            local file_owner=$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path")
             echo "  # Check current permissions:"
             echo "  ls -la '$path'"
             echo "  id $nginx_user"
             echo ""
+            echo "  # CRITICAL: Check and fix parent directories:"
+            local current="$path"
+            for i in {1..3}; do
+                current="$(dirname "$current")"
+                if [ "$current" = "/" ]; then break; fi
+                echo "  ls -ld '$current'  # Check if this blocks access"
+                echo "  chmod 755 '$current'  # Fix if permissions are 700/750"
+            done
+            echo ""
             echo "  # Manual group method:"
-            echo "  usermod -a -G $(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path") $nginx_user"
-            echo "  chown -R $(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path"):$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path") '$path'"
+            echo "  usermod -a -G $file_owner $nginx_user"
+            echo "  chown -R $file_owner:$file_owner '$path'"
             echo "  find '$path' -type d -exec chmod 755 {} \\;"
             echo "  find '$path' -type f -exec chmod 644 {} \\;"
             echo "  systemctl restart nginx"

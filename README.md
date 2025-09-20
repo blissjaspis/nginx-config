@@ -254,14 +254,19 @@ sudo ./nginx-manager.sh fix-permissions /var/www/myapp
    id nginx  # or id www-data
    ```
 
-3. **Check parent directory permissions:**
+3. **🔥 CRITICAL: Check parent directory permissions:**
    ```bash
    ls -ld /home/jaspis/
    ls -ld /home/jaspis/www/
+   # If you see permissions like drwxr-x--- (750), this is the issue!
    ```
 
 4. **Manual fix (if automatic fails):**
    ```bash
+   # CRITICAL: Fix parent directory permissions first!
+   sudo chmod 755 /home/jaspis/
+   sudo chmod 755 /home/jaspis/www/
+
    # Add nginx to your group
    sudo usermod -a -G jaspis nginx
 
@@ -284,6 +289,23 @@ sudo ./nginx-manager.sh fix-permissions /var/www/myapp
 **Error: "nginx user does not exist"**
 - Check what user nginx actually runs as: `ps aux | grep nginx`
 - Use the correct user: `sudo ./nginx-manager.sh fix-permissions --nginx-user www-data /path/to/site`
+
+### Parent Directory Permission Issues
+
+**The most common nginx permission issue:**
+
+Even if nginx is in the correct group, parent directories can block access. For example:
+- `/home/jaspis/` has permissions `drwxr-x---` (750)
+- This means: owner can read/write/execute, group can read/execute, others cannot access
+- Nginx is in the group but still can't traverse into `/home/jaspis/`
+
+**Solution:** Change restrictive parent directories to 755:
+```bash
+sudo chmod 755 /home/jaspis/
+sudo chmod 755 /home/jaspis/www/
+```
+
+The diagnostic tool will detect this issue automatically and show: `⚠️ PARENT DIRECTORY ISSUE DETECTED`
 
 ### Common Issues
 
