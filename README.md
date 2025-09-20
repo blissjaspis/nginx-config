@@ -55,6 +55,9 @@ sudo ./nginx-manager.sh create-nodejs api.example.com 3000
 Nginx needs read access to your website files. Fix permissions after creating a site:
 
 ```bash
+# First, diagnose the issue
+sudo ./nginx-manager.sh diagnose-permissions /var/www/myapp
+
 # Fix permissions using group method (recommended)
 sudo ./nginx-manager.sh fix-permissions /var/www/myapp
 
@@ -236,6 +239,51 @@ sudo ./nginx-manager.sh fix-permissions /var/www/myapp
 - Bash shell
 
 ## Troubleshooting
+
+### Permission Fix Issues
+
+**Error: "Failed to fix permissions"**
+
+1. **Check if directory exists:**
+   ```bash
+   ls -la /home/jaspis/www/bliss.jaspis.me/
+   ```
+
+2. **Check nginx user:**
+   ```bash
+   id nginx  # or id www-data
+   ```
+
+3. **Check parent directory permissions:**
+   ```bash
+   ls -ld /home/jaspis/
+   ls -ld /home/jaspis/www/
+   ```
+
+4. **Manual fix (if automatic fails):**
+   ```bash
+   # Add nginx to your group
+   sudo usermod -a -G jaspis nginx
+
+   # Set proper ownership
+   sudo chown -R jaspis:jaspis /home/jaspis/www/bliss.jaspis.me/
+
+   # Set permissions
+   sudo find /home/jaspis/www/bliss.jaspis.me/ -type d -exec chmod 755 {} \;
+   sudo find /home/jaspis/www/bliss.jaspis.me/ -type f -exec chmod 644 {} \;
+
+   # Restart services
+   sudo systemctl restart nginx
+   sudo systemctl restart php*-fpm
+   ```
+
+**Error: "su: Authentication failure"**
+- The `su` command may not work in some environments
+- Try the manual commands above instead
+
+**Error: "nginx user does not exist"**
+- Check what user nginx actually runs as: `ps aux | grep nginx`
+- Use the correct user: `sudo ./nginx-manager.sh fix-permissions --nginx-user www-data /path/to/site`
 
 ### Common Issues
 

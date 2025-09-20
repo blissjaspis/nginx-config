@@ -72,8 +72,27 @@ check_permissions_for_path() {
     echo "Current ownership: $owner:$group (perms: $perms)"
 
     # Check if nginx user can access
-    if ! su -c "test -r '$path'" "$nginx_user" 2>/dev/null; then
+    log_info "Testing nginx access with su command..."
+    if ! su -c "test -r '$path' && echo 'Access OK'" "$nginx_user" 2>/dev/null; then
         log_warning "Nginx user '$nginx_user' cannot read: $path"
+
+        # Additional debugging info
+        log_info "Debug info:"
+        echo "  - Parent directory permissions:"
+        ls -ld "$(dirname "$path")" 2>/dev/null || echo "    Cannot read parent directory"
+        echo "  - Target permissions:"
+        ls -ld "$path" 2>/dev/null || ls -l "$path" 2>/dev/null || echo "    Cannot read target"
+        echo "  - Nginx user info:"
+        id "$nginx_user" 2>/dev/null || echo "    User does not exist"
+
+        # Try alternative check
+        log_info "Trying alternative access check..."
+        if [ -r "$path" ] && [ -x "$(dirname "$path")" ]; then
+            log_info "Basic permissions look OK, but su test failed. This might be a su configuration issue."
+        else
+            log_info "Basic permission check also failed."
+        fi
+
         return 1
     else
         log_success "Nginx user '$nginx_user' can read: $path"
@@ -89,20 +108,36 @@ fix_permissions_group() {
 
     log_info "Fixing permissions using group method..."
 
+    # Check if nginx user exists
+    if ! id "$nginx_user" >/dev/null 2>&1; then
+        log_error "Nginx user '$nginx_user' does not exist"
+        return 1
+    fi
+
     # Add nginx user to the file owner's group
     log_info "Adding $nginx_user to group of $file_owner"
-    usermod -a -G "$file_owner" "$nginx_user"
+    if ! usermod -a -G "$file_owner" "$nginx_user"; then
+        log_error "Failed to add $nginx_user to group $file_owner"
+        return 1
+    fi
 
     # Set group ownership to file owner's group
     log_info "Setting group ownership to $file_owner"
-    chown -R "$file_owner:$file_owner" "$path"
+    if ! chown -R "$file_owner:$file_owner" "$path"; then
+        log_error "Failed to change ownership of $path"
+        return 1
+    fi
 
     # Set proper permissions
     log_info "Setting directory permissions to 755"
-    find "$path" -type d -exec chmod 755 {} \;
+    if ! find "$path" -type d -exec chmod 755 {} \;; then
+        log_warning "Some directory permissions may not have been set"
+    fi
 
     log_info "Setting file permissions to 644"
-    find "$path" -type f -exec chmod 644 {} \;
+    if ! find "$path" -type f -exec chmod 644 {} \;; then
+        log_warning "Some file permissions may not have been set"
+    fi
 
     # Special permissions for Laravel/Node.js
     if [ -d "$path/storage" ]; then
@@ -287,7 +322,22 @@ main() {
         if check_permissions_for_path "$path" "$nginx_user"; then
             log_success "Permissions successfully fixed!"
         else
-            log_error "Failed to fix permissions"
+            log_error "Failed to fix permissions automatically"
+            log_info "Manual fix commands (run these as root):"
+            echo "  # Check current permissions:"
+            echo "  ls -la '$path'"
+            echo "  id $nginx_user"
+            echo ""
+            echo "  # Manual group method:"
+            echo "  usermod -a -G $(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path") $nginx_user"
+            echo "  chown -R $(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path"):$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path") '$path'"
+            echo "  find '$path' -type d -exec chmod 755 {} \\;"
+            echo "  find '$path' -type f -exec chmod 644 {} \\;"
+            echo "  systemctl restart nginx"
+            echo ""
+            echo "  # Alternative: Make world-readable (less secure):"
+            echo "  chmod -R 755 '$path'"
+            echo "  find '$path' -type f -exec chmod 644 {} \\;"
             exit 1
         fi
     else

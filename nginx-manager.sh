@@ -357,15 +357,16 @@ USAGE:
     $0 [COMMAND] [OPTIONS]
 
 COMMANDS:
-    create-laravel    Create Laravel application configuration
-    create-static     Create static website configuration
-    create-nodejs     Create Node.js application configuration
-    enable            Enable a site
-    disable           Disable a site
-    fix-permissions   Fix file permissions for nginx access
-    test              Test nginx configuration
-    reload            Reload nginx configuration
-    list              List available and enabled sites
+    create-laravel       Create Laravel application configuration
+    create-static        Create static website configuration
+    create-nodejs        Create Node.js application configuration
+    fix-permissions      Fix file permissions for nginx access
+    diagnose-permissions Diagnose permission issues
+    enable               Enable a site
+    disable              Disable a site
+    test                 Test nginx configuration
+    reload               Reload nginx configuration
+    list                 List available and enabled sites
 
 EXAMPLES:
     # Create Laravel site
@@ -379,6 +380,9 @@ EXAMPLES:
 
     # Fix permissions (recommended method)
     $0 fix-permissions /var/www/myapp
+
+    # Diagnose permission issues first
+    $0 diagnose-permissions /var/www/myapp
 
     # Fix permissions with custom nginx user
     $0 fix-permissions --nginx-user www-data /var/www/myapp
@@ -461,6 +465,11 @@ main() {
         fix-permissions)
             shift
             "$SCRIPT_DIR/fix-permissions.sh" "$@"
+            ;;
+
+        diagnose-permissions)
+            shift
+            "$SCRIPT_DIR/diagnose-permissions.sh" "$@"
             ;;
 
         enable)
