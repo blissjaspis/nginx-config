@@ -201,22 +201,6 @@ create_site_config() {
     config_content=${config_content//\{\{ROOT_PATH\}\}/$root_path}
     config_content=${config_content//\{\{PHP_VERSION\}\}/$php_version}
     config_content=${config_content//\{\{PORT\}\}/$port}
-    
-    # Handle SSL
-    if [[ "$ssl_enabled" == "yes" ]]; then
-        # Check if SSL certificates already exist
-        if [[ -f "/etc/letsencrypt/live/$domain/fullchain.pem" && -f "/etc/letsencrypt/live/$domain/privkey.pem" ]]; then
-            # Certificates exist, use full SSL configuration
-            config_content=${config_content//\{\{SSL_LISTEN\}\}/listen 443 ssl;}
-            config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;}
-            config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;}
-
-            # Use secure SSL configuration (avoid Let's Encrypt options to prevent conflicts with main nginx.conf)
-            config_content=${config_content//\{\{SSL_CONFIG\}\}/ssl_protocols TLSv1.2 TLSv1.3; ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384; ssl_prefer_server_ciphers off; ssl_session_cache shared:SSL:10m; ssl_session_timeout 10m;}
-
-            config_content=${config_content//\{\{HTTP2_CONFIG\}\}/http2 on;}
-        fi
-    fi
 
     # Handle www subdomain
     if [[ "$www_enabled" == "yes" ]]; then
@@ -251,7 +235,7 @@ server {
             if [[ -f "/etc/letsencrypt/live/$domain/fullchain.pem" && -f "/etc/letsencrypt/live/$domain/privkey.pem" ]]; then
                 # Update configuration to include SSL
                 print_color $BLUE "Updating configuration to enable SSL..."
-                enable_ssl_in_config "$config_file" "$domain"
+                # enable_ssl_in_config "$config_file" "$domain"
                 if test_nginx_config; then
                     reload_nginx
                     print_color $GREEN "✓ SSL enabled for $domain"
