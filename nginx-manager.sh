@@ -215,21 +215,7 @@ create_site_config() {
             config_content=${config_content//\{\{SSL_CONFIG\}\}/ssl_protocols TLSv1.2 TLSv1.3; ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384; ssl_prefer_server_ciphers off; ssl_session_cache shared:SSL:10m; ssl_session_timeout 10m;}
 
             config_content=${config_content//\{\{HTTP2_CONFIG\}\}/http2 on;}
-        else
-            # Certificates don't exist yet, create config without SSL for now
-            # SSL will be added after certificates are generated
-            config_content=${config_content//\{\{SSL_LISTEN\}\}/}
-            config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/}
-            config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/}
-            config_content=${config_content//\{\{SSL_CONFIG\}\}/}
-            config_content=${config_content//\{\{HTTP2_CONFIG\}\}/}
         fi
-    else
-        config_content=${config_content//\{\{SSL_LISTEN\}\}/}
-        config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/}
-        config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/}
-        config_content=${config_content//\{\{SSL_CONFIG\}\}/}
-        config_content=${config_content//\{\{HTTP2_CONFIG\}\}/}
     fi
 
     # Handle www subdomain
