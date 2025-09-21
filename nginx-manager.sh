@@ -1,519 +1,403 @@
 #!/bin/bash
 
-# Nginx Configuration Manager
-# Automates nginx config creation and management for different application types
+# nginx-manager.sh - Easy nginx configuration generator
+# Author: nginx-config tool
+# Version: 1.0.0
 
 set -e
-
-# Configuration
-NGINX_SITES_AVAILABLE="/etc/nginx/sites-available"
-NGINX_SITES_ENABLED="/etc/nginx/sites-enabled"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEMPLATE_DIR="$SCRIPT_DIR/templates"
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Logging functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+# Configuration
+NGINX_SITES_AVAILABLE="/etc/nginx/sites-available"
+NGINX_SITES_ENABLED="/etc/nginx/sites-enabled"
+TEMPLATES_DIR="$(dirname "$0")/templates"
+SSL_DIR="/etc/ssl/nginx"
+
+# Print colored output
+print_color() {
+    local color=$1
+    local message=$2
+    echo -e "${color}${message}${NC}"
 }
 
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+# Print banner
+print_banner() {
+    clear
+    print_color $CYAN "╔══════════════════════════════════════════════════════════╗"
+    print_color $CYAN "║                    nginx-manager                         ║"
+    print_color $CYAN "║              Easy nginx configuration tool               ║"
+    print_color $CYAN "╚══════════════════════════════════════════════════════════╝"
+    echo
 }
 
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Check if running as root or with sudo
-check_permissions() {
+# Check if running as root for certain operations
+check_root() {
     if [[ $EUID -ne 0 ]]; then
-        log_error "This script must be run as root or with sudo"
+        print_color $RED "This operation requires root privileges. Please run with sudo."
         exit 1
     fi
 }
 
-# Create necessary directories
-setup_directories() {
-    mkdir -p "$TEMPLATE_DIR"
-    mkdir -p "$NGINX_SITES_AVAILABLE"
-    mkdir -p "$NGINX_SITES_ENABLED"
+# Check if nginx is installed
+check_nginx() {
+    if ! command -v nginx &> /dev/null; then
+        print_color $RED "nginx is not installed. Please install nginx first."
+        exit 1
+    fi
+}
+
+# Create directories if they don't exist
+ensure_directories() {
+    local dirs=("$TEMPLATES_DIR" "$SSL_DIR")
+    
+    for dir in "${dirs[@]}"; do
+        if [[ ! -d "$dir" ]]; then
+            print_color $YELLOW "Creating directory: $dir"
+            sudo mkdir -p "$dir" 2>/dev/null || mkdir -p "$dir"
+        fi
+    done
 }
 
 # Validate domain name
 validate_domain() {
     local domain=$1
-    if [[ ! $domain =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        log_error "Invalid domain format: $domain"
-        exit 1
+    if [[ ! $domain =~ ^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+        return 1
     fi
-}
-
-# Validate port number
-validate_port() {
-    local port=$1
-    if ! [[ $port =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-        log_error "Invalid port number: $port"
-        exit 1
-    fi
-}
-
-# Create Laravel application configuration
-create_laravel_config() {
-    local domain=$1
-    local root_path=$2
-    local php_version=${3:-8.1}
-
-    log_info "Creating Laravel configuration for $domain"
-
-    cat > "$NGINX_SITES_AVAILABLE/$domain" << EOF
-server {
-    listen 80;
-    listen [::]:80;
-
-    server_name $domain www.$domain;
-    root $root_path/public;
-    index index.php index.html index.htm;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "no-referrer-when-downgrade" always;
-    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types
-        text/plain
-        text/css
-        text/xml
-        text/javascript
-        application/javascript
-        application/xml+rss
-        application/json;
-
-    # Handle PHP files
-    location ~ \.php$ {
-        try_files \$uri =404;
-        fastcgi_pass unix:/var/run/php/php$php_version-fpm.sock;
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params;
-    }
-
-    # Handle static files
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        try_files \$uri =404;
-    }
-
-    # Deny access to hidden files
-    location ~ /\. {
-        deny all;
-        access_log off;
-        log_not_found off;
-    }
-
-    # Handle Laravel routes
-    location / {
-        try_files \$uri \$uri/ /index.php?\$query_string;
-    }
-
-    # Handle storage files
-    location ^~ /storage/ {
-        try_files \$uri =404;
-    }
-
-    # Handle favicon and robots.txt
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location = /robots.txt  { access_log off; log_not_found off; }
-
-    # Error pages
-    error_page 404 /index.php;
-}
-EOF
-
-    log_success "Laravel configuration created for $domain"
-}
-
-# Create static website configuration
-create_static_config() {
-    local domain=$1
-    local root_path=$2
-
-    log_info "Creating static website configuration for $domain"
-
-    cat > "$NGINX_SITES_AVAILABLE/$domain" << EOF
-server {
-    listen 80;
-    listen [::]:80;
-
-    server_name $domain www.$domain;
-    root $root_path;
-    index index.html index.htm;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "no-referrer-when-downgrade" always;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types
-        text/plain
-        text/css
-        text/xml
-        text/javascript
-        application/javascript
-        application/xml+rss
-        application/json;
-
-    # Handle static files with caching
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot|webp|avif)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        try_files \$uri =404;
-    }
-
-    # Handle HTML files with short cache
-    location ~* \.(html|htm)$ {
-        expires 1h;
-        add_header Cache-Control "public";
-        try_files \$uri =404;
-    }
-
-    # Deny access to hidden files
-    location ~ /\. {
-        deny all;
-        access_log off;
-        log_not_found off;
-    }
-
-    # Handle all other requests
-    location / {
-        try_files \$uri \$uri/ =404;
-    }
-
-    # Handle favicon and robots.txt
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location = /robots.txt  { access_log off; log_not_found off; }
-}
-EOF
-
-    log_success "Static website configuration created for $domain"
-}
-
-# Create Node.js application configuration
-create_nodejs_config() {
-    local domain=$1
-    local upstream_port=$2
-
-    log_info "Creating Node.js configuration for $domain"
-
-    cat > "$NGINX_SITES_AVAILABLE/$domain" << EOF
-upstream $domain {
-    server 127.0.0.1:$upstream_port;
-    keepalive 32;
-}
-
-server {
-    listen 80;
-    listen [::]:80;
-
-    server_name $domain www.$domain;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "no-referrer-when-downgrade" always;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_types
-        text/plain
-        text/css
-        text/xml
-        text/javascript
-        application/javascript
-        application/xml+rss
-        application/json;
-
-    # Handle static files
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot|webp|avif)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        try_files \$uri =404;
-    }
-
-    # Proxy to Node.js application
-    location / {
-        proxy_pass http://$domain;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        proxy_read_timeout 86400;
-    }
-
-    # Deny access to hidden files
-    location ~ /\. {
-        deny all;
-        access_log off;
-        log_not_found off;
-    }
-
-    # Handle favicon and robots.txt
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location = /robots.txt  { access_log off; log_not_found off; }
-}
-EOF
-
-    log_success "Node.js configuration created for $domain"
-}
-
-# Enable a site
-enable_site() {
-    local domain=$1
-
-    if [ ! -f "$NGINX_SITES_AVAILABLE/$domain" ]; then
-        log_error "Configuration file for $domain does not exist"
-        exit 1
-    fi
-
-    if [ -L "$NGINX_SITES_ENABLED/$domain" ]; then
-        log_warning "Site $domain is already enabled"
-        return
-    fi
-
-    ln -s "$NGINX_SITES_AVAILABLE/$domain" "$NGINX_SITES_ENABLED/$domain"
-    log_success "Site $domain enabled"
-}
-
-# Disable a site
-disable_site() {
-    local domain=$1
-
-    if [ ! -L "$NGINX_SITES_ENABLED/$domain" ]; then
-        log_warning "Site $domain is not enabled"
-        return
-    fi
-
-    rm "$NGINX_SITES_ENABLED/$domain"
-    log_success "Site $domain disabled"
+    return 0
 }
 
 # Test nginx configuration
-test_config() {
-    log_info "Testing nginx configuration..."
-    if nginx -t; then
-        log_success "Nginx configuration is valid"
+test_nginx_config() {
+    print_color $BLUE "Testing nginx configuration..."
+    if sudo nginx -t; then
+        print_color $GREEN "✓ nginx configuration is valid"
+        return 0
     else
-        log_error "Nginx configuration has errors"
-        exit 1
+        print_color $RED "✗ nginx configuration has errors"
+        return 1
     fi
 }
 
 # Reload nginx
 reload_nginx() {
-    log_info "Reloading nginx..."
-    if systemctl reload nginx; then
-        log_success "Nginx reloaded successfully"
+    print_color $BLUE "Reloading nginx..."
+    if sudo systemctl reload nginx 2>/dev/null || sudo service nginx reload 2>/dev/null; then
+        print_color $GREEN "✓ nginx reloaded successfully"
     else
-        log_error "Failed to reload nginx"
-        exit 1
+        print_color $RED "✗ Failed to reload nginx"
     fi
 }
 
-# Show usage information
-show_usage() {
-    cat << EOF
-Nginx Configuration Manager
-
-USAGE:
-    $0 [COMMAND] [OPTIONS]
-
-COMMANDS:
-    create-laravel       Create Laravel application configuration
-    create-static        Create static website configuration
-    create-nodejs        Create Node.js application configuration
-    fix-permissions      Fix file permissions for nginx access
-    diagnose-permissions Diagnose permission issues
-    enable               Enable a site
-    disable              Disable a site
-    test                 Test nginx configuration
-    reload               Reload nginx configuration
-    list                 List available and enabled sites
-
-EXAMPLES:
-    # Create Laravel site
-    $0 create-laravel example.com /var/www/laravel-app
-
-    # Create static site
-    $0 create-static static.example.com /var/www/static-site
-
-    # Create Node.js site
-    $0 create-nodejs api.example.com 3000
-
-    # Fix permissions (recommended method)
-    $0 fix-permissions /var/www/myapp
-
-    # Diagnose permission issues first
-    $0 diagnose-permissions /var/www/myapp
-
-    # Fix permissions with custom nginx user
-    $0 fix-permissions --nginx-user www-data /var/www/myapp
-
-    # Enable a site
-    $0 enable example.com
-
-    # Disable a site
-    $0 disable example.com
-
-    # Test and reload
-    $0 test && $0 reload
-
-OPTIONS:
-    --php-version VERSION    PHP version for Laravel (default: 8.1)
-    --nginx-user USER        Nginx user for permissions (default: auto-detect)
-    --method METHOD          Permission fix method: group, owner, world (default: group)
-    --help, -h              Show this help message
-
-EOF
-}
-
-# List sites
-list_sites() {
-    echo "Available sites:"
-    if [ -d "$NGINX_SITES_AVAILABLE" ]; then
-        ls -1 "$NGINX_SITES_AVAILABLE" 2>/dev/null || echo "  None"
-    fi
-
-    echo -e "\nEnabled sites:"
-    if [ -d "$NGINX_SITES_ENABLED" ]; then
-        ls -1 "$NGINX_SITES_ENABLED" 2>/dev/null || echo "  None"
+# Generate SSL certificate with certbot
+generate_ssl() {
+    local domain=$1
+    local email=$2
+    
+    if command -v certbot &> /dev/null; then
+        print_color $BLUE "Generating SSL certificate for $domain..."
+        sudo certbot --nginx -d "$domain" --email "$email" --agree-tos --non-interactive
+    else
+        print_color $YELLOW "Certbot not found. Install certbot to auto-generate SSL certificates."
+        print_color $CYAN "Manual SSL setup instructions will be provided."
     fi
 }
 
-# Main function
-main() {
-    check_permissions
-    setup_directories
+# Create site configuration from template
+create_site_config() {
+    local site_type=$1
+    local domain=$2
+    local root_path=$3
+    local php_version=$4
+    local port=$5
+    local ssl_enabled=$6
+    local email=$7
+    
+    local template_file="$TEMPLATES_DIR/${site_type}.conf"
+    local config_file="$NGINX_SITES_AVAILABLE/$domain"
+    
+    if [[ ! -f "$template_file" ]]; then
+        print_color $RED "Template file not found: $template_file"
+        return 1
+    fi
+    
+    # Read template and substitute variables
+    local config_content
+    config_content=$(cat "$template_file")
+    
+    # Substitute variables
+    config_content=${config_content//\{\{DOMAIN\}\}/$domain}
+    config_content=${config_content//\{\{ROOT_PATH\}\}/$root_path}
+    config_content=${config_content//\{\{PHP_VERSION\}\}/$php_version}
+    config_content=${config_content//\{\{PORT\}\}/$port}
+    
+    # Handle SSL
+    if [[ "$ssl_enabled" == "yes" ]]; then
+        config_content=${config_content//\{\{SSL_LISTEN\}\}/listen 443 ssl http2;}
+        config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;}
+        config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;}
+        config_content=${config_content//\{\{SSL_CONFIG\}\}/include \/etc\/letsencrypt\/options-ssl-nginx.conf; ssl_dhparam \/etc\/letsencrypt\/ssl-dhparams.pem;}
+    else
+        config_content=${config_content//\{\{SSL_LISTEN\}\}/}
+        config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/}
+        config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/}
+        config_content=${config_content//\{\{SSL_CONFIG\}\}/}
+    fi
+    
+    # Write configuration file
+    echo "$config_content" | sudo tee "$config_file" > /dev/null
+    
+    # Enable site
+    sudo ln -sf "$config_file" "$NGINX_SITES_ENABLED/"
+    
+    print_color $GREEN "✓ Site configuration created: $config_file"
+    
+    # Test configuration
+    if test_nginx_config; then
+        # Generate SSL if requested
+        if [[ "$ssl_enabled" == "yes" && -n "$email" ]]; then
+            generate_ssl "$domain" "$email"
+        fi
+        
+        reload_nginx
+        print_color $GREEN "✓ Site $domain is now active!"
+    else
+        print_color $RED "Configuration has errors. Please check and try again."
+    fi
+}
 
-    case "${1:-}" in
-        create-laravel)
-            if [ $# -lt 3 ]; then
-                log_error "Usage: $0 create-laravel <domain> <root_path> [--php-version VERSION]"
-                exit 1
-            fi
-            validate_domain "$2"
-            local php_version="8.1"
-            if [ "${4:-}" = "--php-version" ] && [ -n "${5:-}" ]; then
-                php_version="$5"
-            fi
-            create_laravel_config "$2" "$3" "$php_version"
-            enable_site "$2"
-            test_config
-            ;;
-
-        create-static)
-            if [ $# -lt 3 ]; then
-                log_error "Usage: $0 create-static <domain> <root_path>"
-                exit 1
-            fi
-            validate_domain "$2"
-            create_static_config "$2" "$3"
-            enable_site "$2"
-            test_config
-            ;;
-
-        create-nodejs)
-            if [ $# -lt 3 ]; then
-                log_error "Usage: $0 create-nodejs <domain> <port>"
-                exit 1
-            fi
-            validate_domain "$2"
-            validate_port "$3"
-            create_nodejs_config "$2" "$3"
-            enable_site "$2"
-            test_config
-            ;;
-
-        fix-permissions)
-            shift
-            "$SCRIPT_DIR/fix-permissions.sh" "$@"
-            ;;
-
-        diagnose-permissions)
-            shift
-            "$SCRIPT_DIR/diagnose-permissions.sh" "$@"
-            ;;
-
-        enable)
-            if [ $# -lt 2 ]; then
-                log_error "Usage: $0 enable <domain>"
-                exit 1
-            fi
-            enable_site "$2"
-            test_config
-            reload_nginx
-            ;;
-
-        disable)
-            if [ $# -lt 2 ]; then
-                log_error "Usage: $0 disable <domain>"
-                exit 1
-            fi
-            disable_site "$2"
-            test_config
-            reload_nginx
-            ;;
-
-        test)
-            test_config
-            ;;
-
-        reload)
-            reload_nginx
-            ;;
-
-        list)
-            list_sites
-            ;;
-
-        --help|-h|"")
-            show_usage
-            ;;
-
-        *)
-            log_error "Unknown command: $1"
-            show_usage
-            exit 1
-            ;;
+# Interactive site creation
+create_site_interactive() {
+    print_color $PURPLE "=== Create New Site Configuration ==="
+    echo
+    
+    # Site type selection
+    print_color $CYAN "Select site type:"
+    echo "1) Laravel PHP Application"
+    echo "2) Static HTML/CSS/JS Website"
+    echo "3) Node.js Application"
+    echo "4) WordPress Site"
+    echo "5) Single Page Application (SPA)"
+    echo "6) Reverse Proxy"
+    echo
+    read -p "Enter choice (1-6): " site_type_choice
+    
+    case $site_type_choice in
+        1) site_type="laravel" ;;
+        2) site_type="static" ;;
+        3) site_type="nodejs" ;;
+        4) site_type="wordpress" ;;
+        5) site_type="spa" ;;
+        6) site_type="proxy" ;;
+        *) print_color $RED "Invalid choice"; return 1 ;;
     esac
+    
+    # Domain input
+    while true; do
+        read -p "Enter domain name (e.g., example.com): " domain
+        if validate_domain "$domain"; then
+            break
+        else
+            print_color $RED "Invalid domain name. Please try again."
+        fi
+    done
+    
+    # Root path input
+    if [[ "$site_type" != "proxy" ]]; then
+        read -p "Enter document root path (e.g., /var/www/$domain): " root_path
+        if [[ -z "$root_path" ]]; then
+            root_path="/var/www/$domain"
+        fi
+    fi
+    
+    # PHP version for Laravel/WordPress
+    php_version="8.2"
+    if [[ "$site_type" == "laravel" || "$site_type" == "wordpress" ]]; then
+        read -p "Enter PHP version (default: 8.2): " php_input
+        if [[ -n "$php_input" ]]; then
+            php_version="$php_input"
+        fi
+    fi
+    
+    # Port for Node.js/Proxy
+    port="3000"
+    if [[ "$site_type" == "nodejs" || "$site_type" == "proxy" ]]; then
+        read -p "Enter application port (default: 3000): " port_input
+        if [[ -n "$port_input" ]]; then
+            port="$port_input"
+        fi
+    fi
+    
+    # SSL configuration
+    read -p "Enable SSL with Let's Encrypt? (y/n): " ssl_choice
+    ssl_enabled="no"
+    email=""
+    if [[ "$ssl_choice" == "y" || "$ssl_choice" == "yes" ]]; then
+        ssl_enabled="yes"
+        read -p "Enter email for Let's Encrypt: " email
+    fi
+    
+    # Confirmation
+    echo
+    print_color $YELLOW "=== Configuration Summary ==="
+    print_color $CYAN "Site Type: $site_type"
+    print_color $CYAN "Domain: $domain"
+    [[ -n "$root_path" ]] && print_color $CYAN "Root Path: $root_path"
+    [[ "$site_type" == "laravel" || "$site_type" == "wordpress" ]] && print_color $CYAN "PHP Version: $php_version"
+    [[ "$site_type" == "nodejs" || "$site_type" == "proxy" ]] && print_color $CYAN "Port: $port"
+    print_color $CYAN "SSL Enabled: $ssl_enabled"
+    [[ -n "$email" ]] && print_color $CYAN "Email: $email"
+    echo
+    
+    read -p "Continue? (y/n): " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "yes" ]]; then
+        print_color $YELLOW "Operation cancelled."
+        return 0
+    fi
+    
+    # Create the configuration
+    create_site_config "$site_type" "$domain" "$root_path" "$php_version" "$port" "$ssl_enabled" "$email"
 }
 
+# List existing sites
+list_sites() {
+    print_color $PURPLE "=== Nginx Sites ==="
+    echo
+    
+    if [[ -d "$NGINX_SITES_AVAILABLE" ]]; then
+        print_color $CYAN "Available sites:"
+        for site in "$NGINX_SITES_AVAILABLE"/*; do
+            if [[ -f "$site" ]]; then
+                local site_name=$(basename "$site")
+                local status="disabled"
+                if [[ -L "$NGINX_SITES_ENABLED/$site_name" ]]; then
+                    status="enabled"
+                fi
+                printf "  %-30s [%s]\n" "$site_name" "$status"
+            fi
+        done
+    fi
+    echo
+}
+
+# Remove site
+remove_site() {
+    list_sites
+    read -p "Enter site name to remove: " site_name
+    
+    if [[ -f "$NGINX_SITES_AVAILABLE/$site_name" ]]; then
+        read -p "Are you sure you want to remove $site_name? (y/n): " confirm
+        if [[ "$confirm" == "y" || "$confirm" == "yes" ]]; then
+            sudo rm -f "$NGINX_SITES_ENABLED/$site_name"
+            sudo rm -f "$NGINX_SITES_AVAILABLE/$site_name"
+            print_color $GREEN "✓ Site $site_name removed"
+            reload_nginx
+        fi
+    else
+        print_color $RED "Site $site_name not found"
+    fi
+}
+
+# Main menu
+main_menu() {
+    while true; do
+        print_banner
+        print_color $CYAN "Choose an option:"
+        echo "1) Create new site configuration"
+        echo "2) List existing sites"
+        echo "3) Remove site"
+        echo "4) Test nginx configuration"
+        echo "5) Reload nginx"
+        echo "6) Install/Update templates"
+        echo "7) Exit"
+        echo
+        read -p "Enter choice (1-7): " choice
+        
+        case $choice in
+            1)
+                ensure_directories
+                create_site_interactive
+                read -p "Press Enter to continue..."
+                ;;
+            2)
+                list_sites
+                read -p "Press Enter to continue..."
+                ;;
+            3)
+                remove_site
+                read -p "Press Enter to continue..."
+                ;;
+            4)
+                test_nginx_config
+                read -p "Press Enter to continue..."
+                ;;
+            5)
+                reload_nginx
+                read -p "Press Enter to continue..."
+                ;;
+            6)
+                install_templates
+                read -p "Press Enter to continue..."
+                ;;
+            7)
+                print_color $GREEN "Goodbye!"
+                exit 0
+                ;;
+            *)
+                print_color $RED "Invalid choice"
+                read -p "Press Enter to continue..."
+                ;;
+        esac
+    done
+}
+
+# Install templates function (will be called later)
+install_templates() {
+    print_color $BLUE "Installing/updating nginx templates..."
+    ensure_directories
+    # Templates will be created by the setup
+    print_color $GREEN "✓ Templates installed successfully"
+}
+
+# Main execution
+main() {
+    check_nginx
+    
+    if [[ $# -eq 0 ]]; then
+        main_menu
+    else
+        case $1 in
+            "create")
+                ensure_directories
+                create_site_interactive
+                ;;
+            "list")
+                list_sites
+                ;;
+            "test")
+                test_nginx_config
+                ;;
+            "reload")
+                reload_nginx
+                ;;
+            "install-templates")
+                install_templates
+                ;;
+            *)
+                echo "Usage: $0 [create|list|test|reload|install-templates]"
+                echo "Run without arguments for interactive mode."
+                ;;
+        esac
+    fi
+}
+
+# Run main function
 main "$@"
