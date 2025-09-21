@@ -249,17 +249,86 @@ Templates are located in the `templates/` directory. Each template uses variable
 2. Use the variable substitution format
 3. Add the new template option to the main script
 
+## Diagnostic Tool
+
+The package includes a comprehensive diagnostic tool to help troubleshoot "This site can't be reached" and other common nginx issues.
+
+### Using the Diagnostic Tool
+
+```bash
+# Make the diagnostic script executable
+chmod +x diagnose.sh
+
+# Run the diagnostic tool
+sudo ./diagnose.sh
+```
+
+The diagnostic tool will check:
+- ✅ nginx installation and version
+- ✅ nginx service status (running/stopped)
+- ✅ nginx configuration validity
+- ✅ Listening ports (80, 443)
+- ✅ Firewall settings (UFW, iptables, firewalld)
+- ✅ Available and enabled sites
+- ✅ DNS resolution for your domain
+- ✅ HTTP/HTTPS connectivity tests
+- ✅ System resources (disk, memory, load)
+- ✅ Recent nginx error logs
+
+### Remote Server Troubleshooting
+
+If your nginx is running on a remote server:
+
+1. **Upload the tools to your server:**
+   ```bash
+   # Copy the entire nginx-config directory to your server
+   scp -r nginx-config/ user@your-server:~/
+   
+   # Or copy individual files
+   scp nginx-manager.sh diagnose.sh user@your-server:~/
+   scp -r templates/ user@your-server:~/
+   ```
+
+2. **Connect to your server and run diagnostics:**
+   ```bash
+   # SSH to your server
+   ssh user@your-server
+   
+   # Run the diagnostic tool
+   sudo ./diagnose.sh
+   ```
+
+3. **Common remote server issues:**
+   - Domain not pointing to server IP
+   - Firewall blocking ports 80/443
+   - nginx not running or misconfigured
+   - DNS propagation delays
+   - SSL certificate issues
+
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Permission Denied**
+1. **"This site can't be reached" Error**
+   
+   Run the diagnostic tool first:
+   ```bash
+   sudo ./diagnose.sh
+   ```
+   
+   Common causes and solutions:
+   - **nginx not running:** `sudo systemctl start nginx`
+   - **Firewall blocking ports:** `sudo ufw allow 80 && sudo ufw allow 443`
+   - **Domain not pointing to server:** Check DNS settings with your domain provider
+   - **nginx misconfigured:** `sudo nginx -t` to check for errors
+
+2. **Permission Denied**
    ```bash
    # Make sure to run with sudo for system operations
    sudo ./nginx-manager.sh
    ```
 
-2. **nginx: configuration file test failed**
+3. **nginx: configuration file test failed**
    ```bash
    # Check nginx configuration
    sudo nginx -t
@@ -268,7 +337,7 @@ Templates are located in the `templates/` directory. Each template uses variable
    sudo tail -f /var/log/nginx/error.log
    ```
 
-3. **SSL Certificate Issues**
+4. **SSL Certificate Issues**
    ```bash
    # Ensure domain points to server
    nslookup yourdomain.com
@@ -277,7 +346,7 @@ Templates are located in the `templates/` directory. Each template uses variable
    sudo tail -f /var/log/letsencrypt/letsencrypt.log
    ```
 
-4. **PHP-FPM Not Found**
+5. **PHP-FPM Not Found**
    ```bash
    # Install PHP-FPM
    sudo apt install php8.2-fpm  # Ubuntu/Debian
@@ -286,6 +355,15 @@ Templates are located in the `templates/` directory. Each template uses variable
    # Start PHP-FPM service
    sudo systemctl start php8.2-fpm
    sudo systemctl enable php8.2-fpm
+   ```
+
+6. **Site Shows nginx Default Page**
+   ```bash
+   # Remove default site
+   sudo rm /etc/nginx/sites-enabled/default
+   
+   # Reload nginx
+   sudo systemctl reload nginx
    ```
 
 ### Testing Configurations
@@ -301,6 +379,27 @@ sudo nginx -t -c /etc/nginx/sites-available/yourdomain.com
 
 # Reload nginx if tests pass
 sudo systemctl reload nginx
+```
+
+### DNS and Connectivity Testing
+
+```bash
+# Test if domain resolves
+nslookup yourdomain.com
+
+# Test if domain points to your server
+dig yourdomain.com
+
+# Test HTTP connectivity
+curl -I http://yourdomain.com
+
+# Test HTTPS connectivity  
+curl -I https://yourdomain.com
+
+# Check what's listening on ports
+sudo netstat -tlnp | grep nginx
+# or
+sudo ss -tlnp | grep nginx
 ```
 
 ## Security Considerations
