@@ -120,6 +120,7 @@ create_site_config() {
     local port=$5
     local ssl_enabled=$6
     local email=$7
+    local www_enabled=$8
     
     local template_file="$TEMPLATES_DIR/${site_type}.conf"
     local config_file="$NGINX_SITES_AVAILABLE/$domain"
@@ -141,17 +142,34 @@ create_site_config() {
     
     # Handle SSL
     if [[ "$ssl_enabled" == "yes" ]]; then
-        config_content=${config_content//\{\{SSL_LISTEN\}\}/listen 443 ssl http2;}
+        config_content=${config_content//\{\{SSL_LISTEN\}\}/listen 443 ssl;}
         config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;}
         config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;}
         config_content=${config_content//\{\{SSL_CONFIG\}\}/include \/etc\/letsencrypt\/options-ssl-nginx.conf; ssl_dhparam \/etc\/letsencrypt\/ssl-dhparams.pem;}
+        config_content=${config_content//\{\{HTTP2_CONFIG\}\}/http2 on;}
     else
         config_content=${config_content//\{\{SSL_LISTEN\}\}/}
         config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/}
         config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/}
         config_content=${config_content//\{\{SSL_CONFIG\}\}/}
+        config_content=${config_content//\{\{HTTP2_CONFIG\}\}/}
     fi
-    
+
+    # Handle www subdomain
+    if [[ "$www_enabled" == "yes" ]]; then
+        config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.{{DOMAIN}}}
+        config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/# Redirect www to non-www (optional)
+server {
+    listen 80;
+    {{SSL_LISTEN}}
+    server_name www.{{DOMAIN}};
+    return 301 \$scheme://{{DOMAIN}}\$request_uri;
+}}
+    else
+        config_content=${config_content//\{\{WWW_CONFIG\}\}/}
+        config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/}
+    fi
+
     # Write configuration file
     echo "$config_content" | sudo tee "$config_file" > /dev/null
     
@@ -244,6 +262,13 @@ create_site_interactive() {
         ssl_enabled="yes"
         read -p "Enter email for Let's Encrypt: " email
     fi
+
+    # www subdomain configuration
+    read -p "Include www subdomain? (y/n): " www_choice
+    www_enabled="no"
+    if [[ "$www_choice" == "y" || "$www_choice" == "yes" ]]; then
+        www_enabled="yes"
+    fi
     
     # Confirmation
     echo
@@ -255,6 +280,7 @@ create_site_interactive() {
     [[ "$site_type" == "nodejs" || "$site_type" == "proxy" ]] && print_color $CYAN "Port: $port"
     print_color $CYAN "SSL Enabled: $ssl_enabled"
     [[ -n "$email" ]] && print_color $CYAN "Email: $email"
+    print_color $CYAN "www Subdomain: $www_enabled"
     echo
     
     read -p "Continue? (y/n): " confirm
@@ -264,7 +290,7 @@ create_site_interactive() {
     fi
     
     # Create the configuration
-    create_site_config "$site_type" "$domain" "$root_path" "$php_version" "$port" "$ssl_enabled" "$email"
+    create_site_config "$site_type" "$domain" "$root_path" "$php_version" "$port" "$ssl_enabled" "$email" "$www_enabled"
 }
 
 # List existing sites
