@@ -111,6 +111,62 @@ generate_ssl() {
     fi
 }
 
+# Enable SSL in existing configuration
+enable_ssl_in_config() {
+    local config_file=$1
+    local domain=$2
+
+    print_color $BLUE "Enabling SSL in configuration: $config_file"
+
+    # Create backup
+    sudo cp "$config_file" "${config_file}.backup"
+
+    # Read current config
+    local config_content
+    config_content=$(cat "$config_file")
+
+    # Replace the listen 80 line with listen 80 and 443
+    config_content=${config_content//    listen 80;/    listen 80;
+    listen 443 ssl http2;}
+
+    # Add SSL configuration after server_name
+    local ssl_config=""
+    ssl_config+="\n    # SSL Configuration"
+    ssl_config+="\n    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;"
+    ssl_config+="\n    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;"
+
+    # Add SSL protocols and ciphers
+    if [[ -f "/etc/letsencrypt/options-ssl-nginx.conf" && -f "/etc/letsencrypt/ssl-dhparams.pem" ]]; then
+        ssl_config+="\n    include /etc/letsencrypt/options-ssl-nginx.conf;"
+        ssl_config+="\n    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;"
+    else
+        ssl_config+="\n    ssl_protocols TLSv1.2 TLSv1.3;"
+        ssl_config+="\n    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;"
+        ssl_config+="\n    ssl_prefer_server_ciphers off;"
+    fi
+
+    # Insert SSL config after server_name line
+    config_content=$(echo "$config_content" | sed "/server_name/a\\$ssl_config")
+
+    # Also add SSL to www redirect block if it exists
+    if echo "$config_content" | grep -q "server_name www\.$domain"; then
+        # Add SSL listen to www redirect block
+        config_content=$(echo "$config_content" | sed "/server_name www\.$domain/a\\    listen 443 ssl http2;\n\n    # SSL Configuration\n    ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;\n    ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/")
+
+        # Add SSL config to www block
+        if [[ -f "/etc/letsencrypt/options-ssl-nginx.conf" && -f "/etc/letsencrypt/ssl-dhparams.pem" ]]; then
+            config_content=$(echo "$config_content" | sed "/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/a\\    include \/etc\/letsencrypt\/options-ssl-nginx.conf;\n    ssl_dhparam \/etc\/letsencrypt\/ssl-dhparams.pem;/")
+        else
+            config_content=$(echo "$config_content" | sed "/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/a\\    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;\n    ssl_prefer_server_ciphers off;/")
+        fi
+    fi
+
+    # Write the updated config
+    echo "$config_content" | sudo tee "$config_file" > /dev/null
+
+    print_color $GREEN "✓ SSL configuration added to $config_file"
+}
+
 # Create site configuration from template
 create_site_config() {
     local site_type=$1
@@ -142,11 +198,30 @@ create_site_config() {
     
     # Handle SSL
     if [[ "$ssl_enabled" == "yes" ]]; then
-        config_content=${config_content//\{\{SSL_LISTEN\}\}/listen 443 ssl;}
-        config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;}
-        config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;}
-        config_content=${config_content//\{\{SSL_CONFIG\}\}/include \/etc\/letsencrypt\/options-ssl-nginx.conf; ssl_dhparam \/etc\/letsencrypt\/ssl-dhparams.pem;}
-        config_content=${config_content//\{\{HTTP2_CONFIG\}\}/http2 on;}
+        # Check if SSL certificates already exist
+        if [[ -f "/etc/letsencrypt/live/$domain/fullchain.pem" && -f "/etc/letsencrypt/live/$domain/privkey.pem" ]]; then
+            # Certificates exist, use full SSL configuration
+            config_content=${config_content//\{\{SSL_LISTEN\}\}/listen 443 ssl;}
+            config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;}
+            config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;}
+
+            # Use Let's Encrypt config if available, otherwise use fallback
+            if [[ -f "/etc/letsencrypt/options-ssl-nginx.conf" && -f "/etc/letsencrypt/ssl-dhparams.pem" ]]; then
+                config_content=${config_content//\{\{SSL_CONFIG\}\}/include \/etc\/letsencrypt\/options-ssl-nginx.conf; ssl_dhparam \/etc\/letsencrypt\/ssl-dhparams.pem;}
+            else
+                config_content=${config_content//\{\{SSL_CONFIG\}\}/ssl_protocols TLSv1.2 TLSv1.3; ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384; ssl_prefer_server_ciphers off;}
+            fi
+
+            config_content=${config_content//\{\{HTTP2_CONFIG\}\}/http2 on;}
+        else
+            # Certificates don't exist yet, create config without SSL for now
+            # SSL will be added after certificates are generated
+            config_content=${config_content//\{\{SSL_LISTEN\}\}/}
+            config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/}
+            config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/}
+            config_content=${config_content//\{\{SSL_CONFIG\}\}/}
+            config_content=${config_content//\{\{HTTP2_CONFIG\}\}/}
+        fi
     else
         config_content=${config_content//\{\{SSL_LISTEN\}\}/}
         config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/}
@@ -183,8 +258,23 @@ server {
         # Generate SSL if requested
         if [[ "$ssl_enabled" == "yes" && -n "$email" ]]; then
             generate_ssl "$domain" "$email"
+
+            # Check if SSL certificates were successfully generated
+            if [[ -f "/etc/letsencrypt/live/$domain/fullchain.pem" && -f "/etc/letsencrypt/live/$domain/privkey.pem" ]]; then
+                # Update configuration to include SSL
+                print_color $BLUE "Updating configuration to enable SSL..."
+                enable_ssl_in_config "$config_file" "$domain"
+                if test_nginx_config; then
+                    reload_nginx
+                    print_color $GREEN "✓ SSL enabled for $domain"
+                else
+                    print_color $YELLOW "⚠ SSL certificates generated but configuration update failed"
+                fi
+            else
+                print_color $YELLOW "⚠ SSL certificate generation failed"
+            fi
         fi
-        
+
         reload_nginx
         print_color $GREEN "✓ Site $domain is now active!"
     else
