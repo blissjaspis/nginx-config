@@ -140,7 +140,7 @@ enable_ssl_in_config() {
 
     # Replace the listen 80 line with listen 80 and 443
     config_content=${config_content//    listen 80;/    listen 80;
-    listen 443 ssl http2;}
+    listen 443 ssl;}
 
     # Add SSL configuration after server_name
     local ssl_config=""
@@ -161,7 +161,7 @@ enable_ssl_in_config() {
     # Also add SSL to www redirect block if it exists
     if echo "$config_content" | grep -q "server_name www\.$domain"; then
         # Add SSL listen to www redirect block
-        config_content=$(echo "$config_content" | sed "/server_name www\.$domain/a\\    listen 443 ssl http2;\n\n    # SSL Configuration\n    ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;\n    ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/")
+        config_content=$(echo "$config_content" | sed "/server_name www\.$domain/a\\    listen 443 ssl;\n\n    # SSL Configuration\n    ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;\n    ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/")
 
         # Add SSL config to www block
         config_content=$(echo "$config_content" | sed "/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/a\\    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;\n    ssl_prefer_server_ciphers off;\n    ssl_session_cache shared:SSL:10m;\n    ssl_session_timeout 10m;/")
