@@ -75,9 +75,21 @@ validate_domain() {
     return 0
 }
 
+# Ensure nginx directories exist with proper permissions
+ensure_nginx_dirs() {
+    # Create log directories if they don't exist
+    sudo mkdir -p /var/log/nginx 2>/dev/null || true
+    sudo chown -R nginx:nginx /var/log/nginx 2>/dev/null || true
+
+    # Create cache directories
+    sudo mkdir -p /var/cache/nginx 2>/dev/null || true
+    sudo chown -R nginx:nginx /var/cache/nginx 2>/dev/null || true
+}
+
 # Test nginx configuration
 test_nginx_config() {
     print_color $BLUE "Testing nginx configuration..."
+    ensure_nginx_dirs
     if sudo nginx -t; then
         print_color $GREEN "✓ nginx configuration is valid"
         return 0
@@ -90,6 +102,7 @@ test_nginx_config() {
 # Reload nginx
 reload_nginx() {
     print_color $BLUE "Reloading nginx..."
+    ensure_nginx_dirs
     if sudo systemctl reload nginx 2>/dev/null || sudo service nginx reload 2>/dev/null; then
         print_color $GREEN "✓ nginx reloaded successfully"
     else
@@ -135,15 +148,12 @@ enable_ssl_in_config() {
     ssl_config+="\n    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;"
     ssl_config+="\n    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;"
 
-    # Add SSL protocols and ciphers
-    if [[ -f "/etc/letsencrypt/options-ssl-nginx.conf" && -f "/etc/letsencrypt/ssl-dhparams.pem" ]]; then
-        ssl_config+="\n    include /etc/letsencrypt/options-ssl-nginx.conf;"
-        ssl_config+="\n    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;"
-    else
-        ssl_config+="\n    ssl_protocols TLSv1.2 TLSv1.3;"
-        ssl_config+="\n    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;"
-        ssl_config+="\n    ssl_prefer_server_ciphers off;"
-    fi
+    # Add secure SSL protocols and ciphers (avoid Let's Encrypt options to prevent conflicts)
+    ssl_config+="\n    ssl_protocols TLSv1.2 TLSv1.3;"
+    ssl_config+="\n    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;"
+    ssl_config+="\n    ssl_prefer_server_ciphers off;"
+    ssl_config+="\n    ssl_session_cache shared:SSL:10m;"
+    ssl_config+="\n    ssl_session_timeout 10m;"
 
     # Insert SSL config after server_name line
     config_content=$(echo "$config_content" | sed "/server_name/a\\$ssl_config")
@@ -154,11 +164,7 @@ enable_ssl_in_config() {
         config_content=$(echo "$config_content" | sed "/server_name www\.$domain/a\\    listen 443 ssl http2;\n\n    # SSL Configuration\n    ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;\n    ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/")
 
         # Add SSL config to www block
-        if [[ -f "/etc/letsencrypt/options-ssl-nginx.conf" && -f "/etc/letsencrypt/ssl-dhparams.pem" ]]; then
-            config_content=$(echo "$config_content" | sed "/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/a\\    include \/etc\/letsencrypt\/options-ssl-nginx.conf;\n    ssl_dhparam \/etc\/letsencrypt\/ssl-dhparams.pem;/")
-        else
-            config_content=$(echo "$config_content" | sed "/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/a\\    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;\n    ssl_prefer_server_ciphers off;/")
-        fi
+        config_content=$(echo "$config_content" | sed "/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;/a\\    ssl_protocols TLSv1.2 TLSv1.3;\n    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;\n    ssl_prefer_server_ciphers off;\n    ssl_session_cache shared:SSL:10m;\n    ssl_session_timeout 10m;/")
     fi
 
     # Write the updated config
@@ -205,12 +211,8 @@ create_site_config() {
             config_content=${config_content//\{\{SSL_CERTIFICATE\}\}/ssl_certificate \/etc\/letsencrypt\/live\/$domain\/fullchain.pem;}
             config_content=${config_content//\{\{SSL_CERTIFICATE_KEY\}\}/ssl_certificate_key \/etc\/letsencrypt\/live\/$domain\/privkey.pem;}
 
-            # Use Let's Encrypt config if available, otherwise use fallback
-            if [[ -f "/etc/letsencrypt/options-ssl-nginx.conf" && -f "/etc/letsencrypt/ssl-dhparams.pem" ]]; then
-                config_content=${config_content//\{\{SSL_CONFIG\}\}/include \/etc\/letsencrypt\/options-ssl-nginx.conf; ssl_dhparam \/etc\/letsencrypt\/ssl-dhparams.pem;}
-            else
-                config_content=${config_content//\{\{SSL_CONFIG\}\}/ssl_protocols TLSv1.2 TLSv1.3; ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384; ssl_prefer_server_ciphers off;}
-            fi
+            # Use secure SSL configuration (avoid Let's Encrypt options to prevent conflicts with main nginx.conf)
+            config_content=${config_content//\{\{SSL_CONFIG\}\}/ssl_protocols TLSv1.2 TLSv1.3; ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384; ssl_prefer_server_ciphers off; ssl_session_cache shared:SSL:10m; ssl_session_timeout 10m;}
 
             config_content=${config_content//\{\{HTTP2_CONFIG\}\}/http2 on;}
         else
