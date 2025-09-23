@@ -211,7 +211,6 @@ create_site_config() {
             config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect naked domain to www
 server {
     listen 80;
-    {{SSL_LISTEN}}
     server_name {{DOMAIN}};
     return 301 \$scheme://www.{{DOMAIN}}\$request_uri;
 }"}
@@ -221,7 +220,6 @@ server {
             config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect www to non-www (optional)
 server {
     listen 80;
-    {{SSL_LISTEN}}
     server_name www.{{DOMAIN}};
     return 301 \$scheme://{{DOMAIN}}\$request_uri;
 }"}
