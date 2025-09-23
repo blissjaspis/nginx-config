@@ -205,13 +205,13 @@ create_site_config() {
     # Handle www subdomain
     if [[ "$www_enabled" == "yes" ]]; then
         config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.{{DOMAIN}}}
-        config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/# Redirect www to non-www (optional)
+        config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect www to non-www (optional)
 server {
     listen 80;
     {{SSL_LISTEN}}
     server_name www.{{DOMAIN}};
     return 301 \$scheme://{{DOMAIN}}\$request_uri;
-}}
+}"}
     else
         config_content=${config_content//\{\{WWW_CONFIG\}\}/}
         config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/}
