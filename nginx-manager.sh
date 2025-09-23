@@ -183,6 +183,7 @@ create_site_config() {
     local ssl_enabled=$6
     local email=$7
     local www_enabled=$8
+    local www_is_main=$9
     
     local template_file="$TEMPLATES_DIR/${site_type}.conf"
     local config_file="$NGINX_SITES_AVAILABLE/$domain"
@@ -204,14 +205,27 @@ create_site_config() {
 
     # Handle www subdomain
     if [[ "$www_enabled" == "yes" ]]; then
-        config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.{{DOMAIN}}}
-        config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect www to non-www (optional)
+        if [[ "$www_is_main" == "yes" ]]; then
+            # www is main, naked domain redirects to www
+            config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.{{DOMAIN}}}
+            config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect naked domain to www
+server {
+    listen 80;
+    {{SSL_LISTEN}}
+    server_name {{DOMAIN}};
+    return 301 \$scheme://www.{{DOMAIN}}\$request_uri;
+}"}
+        else
+            # naked is main, www redirects to naked domain  
+            config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.{{DOMAIN}}}
+            config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect www to non-www (optional)
 server {
     listen 80;
     {{SSL_LISTEN}}
     server_name www.{{DOMAIN}};
     return 301 \$scheme://{{DOMAIN}}\$request_uri;
 }"}
+        fi
     else
         config_content=${config_content//\{\{WWW_CONFIG\}\}/}
         config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/}
@@ -328,8 +342,17 @@ create_site_interactive() {
     # www subdomain configuration
     read -p "Include www subdomain? (y/n): " www_choice
     www_enabled="no"
+    www_is_main="no"
     if [[ "$www_choice" == "y" || "$www_choice" == "yes" ]]; then
         www_enabled="yes"
+        echo
+        print_color $YELLOW "Which domain should be the main one?"
+        print_color $CYAN "1) Naked domain (${domain}) - redirect www to naked"
+        print_color $CYAN "2) www domain (www.${domain}) - redirect naked to www"
+        read -p "Choose (1 or 2): " main_choice
+        if [[ "$main_choice" == "2" ]]; then
+            www_is_main="yes"
+        fi
     fi
     
     # Confirmation
@@ -343,6 +366,13 @@ create_site_interactive() {
     print_color $CYAN "SSL Enabled: $ssl_enabled"
     [[ -n "$email" ]] && print_color $CYAN "Email: $email"
     print_color $CYAN "www Subdomain: $www_enabled"
+    if [[ "$www_enabled" == "yes" ]]; then
+        if [[ "$www_is_main" == "yes" ]]; then
+            print_color $CYAN "Main Domain: www.${domain} (naked redirects to www)"
+        else
+            print_color $CYAN "Main Domain: ${domain} (www redirects to naked)"
+        fi
+    fi
     echo
     
     read -p "Continue? (y/n): " confirm
@@ -352,7 +382,7 @@ create_site_interactive() {
     fi
     
     # Create the configuration
-    create_site_config "$site_type" "$domain" "$root_path" "$php_version" "$port" "$ssl_enabled" "$email" "$www_enabled"
+    create_site_config "$site_type" "$domain" "$root_path" "$php_version" "$port" "$ssl_enabled" "$email" "$www_enabled" "$www_is_main"
 }
 
 # List existing sites
