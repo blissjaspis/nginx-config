@@ -207,21 +207,21 @@ create_site_config() {
     if [[ "$www_enabled" == "yes" ]]; then
         if [[ "$www_is_main" == "yes" ]]; then
             # www is main, naked domain redirects to www
-            config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.{{DOMAIN}}}
+            config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.$domain}
             config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect naked domain to www
 server {
     listen 80;
-    server_name {{DOMAIN}};
-    return 301 \$scheme://www.{{DOMAIN}}\$request_uri;
+    server_name $domain;
+    return 301 \$scheme://www.$domain\$request_uri;
 }"}
         else
             # naked is main, www redirects to naked domain  
-            config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.{{DOMAIN}}}
+            config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.$domain}
             config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect www to non-www (optional)
 server {
     listen 80;
-    server_name www.{{DOMAIN}};
-    return 301 \$scheme://{{DOMAIN}}\$request_uri;
+    server_name www.$domain;
+    return 301 \$scheme://$domain\$request_uri;
 }"}
         fi
     else
