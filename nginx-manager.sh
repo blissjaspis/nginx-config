@@ -198,6 +198,7 @@ create_site_config() {
     config_content=$(cat "$template_file")
     
     # Substitute variables
+    config_content=${config_content//\{\{LOG_DOMAIN\}\}/$domain}
     config_content=${config_content//\{\{ROOT_PATH\}\}/$root_path}
     config_content=${config_content//\{\{PHP_VERSION\}\}/$php_version}
     config_content=${config_content//\{\{PORT\}\}/$port}
