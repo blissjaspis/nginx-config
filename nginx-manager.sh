@@ -198,7 +198,7 @@ create_site_config() {
     config_content=$(cat "$template_file")
     
     # Substitute variables
-    config_content=${config_content//\{\{DOMAIN\}\}/$domain}
+    # config_content=${config_content//\{\{DOMAIN\}\}/$domain}
     config_content=${config_content//\{\{ROOT_PATH\}\}/$root_path}
     config_content=${config_content//\{\{PHP_VERSION\}\}/$php_version}
     config_content=${config_content//\{\{PORT\}\}/$port}
@@ -207,8 +207,8 @@ create_site_config() {
     if [[ "$www_enabled" == "yes" ]]; then
         if [[ "$www_is_main" == "yes" ]]; then
             # www is main, naked domain redirects to www
-            config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.$domain}
-            config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect naked domain to www
+            config_content=${config_content//\{\{DOMAIN\}\}/ www.$domain}
+            config_content=${config_content//\{\{REDIRECT_BLOCK\}\}/"# Redirect naked domain to www
 server {
     listen 80;
     server_name $domain;
@@ -216,8 +216,8 @@ server {
 }"}
         else
             # naked is main, www redirects to naked domain  
-            config_content=${config_content//\{\{WWW_CONFIG\}\}/ www.$domain}
-            config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/"# Redirect www to non-www (optional)
+            config_content=${config_content//\{\{DOMAIN\}\}/ $domain}
+            config_content=${config_content//\{\{REDIRECT_BLOCK\}\}/"# Redirect www to non-www (optional)
 server {
     listen 80;
     server_name www.$domain;
@@ -225,8 +225,8 @@ server {
 }"}
         fi
     else
-        config_content=${config_content//\{\{WWW_CONFIG\}\}/}
-        config_content=${config_content//\{\{WWW_REDIRECT_BLOCK\}\}/}
+        config_content=${config_content//\{\{DOMAIN\}\}/$domain}
+        config_content=${config_content//\{\{REDIRECT_BLOCK\}\}/}
     fi
 
     # Write configuration file
