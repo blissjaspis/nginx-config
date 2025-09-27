@@ -114,10 +114,15 @@ reload_nginx() {
 generate_ssl() {
     local domain=$1
     local email=$2
+    local www_enabled=$3
     
     if command -v certbot &> /dev/null; then
         print_color $BLUE "Generating SSL certificate for $domain..."
-        sudo certbot --nginx -d "$domain" --email "$email" --agree-tos --non-interactive
+        if [[ "$www_enabled" == "yes" ]]; then
+            sudo certbot --nginx -d "$domain" -d "www.$domain" --email "$email" --agree-tos --non-interactive
+        else
+            sudo certbot --nginx -d "$domain" --email "$email" --agree-tos --non-interactive
+        fi
     else
         print_color $YELLOW "Certbot not found. Install certbot to auto-generate SSL certificates."
         print_color $CYAN "Manual SSL setup instructions will be provided."
@@ -241,7 +246,7 @@ server {
     if test_nginx_config; then
         # Generate SSL if requested
         if [[ "$ssl_enabled" == "yes" && -n "$email" ]]; then
-            generate_ssl "$domain" "$email"
+            generate_ssl "$domain" "$email" "$www_enabled"
 
             # Check if SSL certificates were successfully generated
             if [[ -f "/etc/letsencrypt/live/$domain/fullchain.pem" && -f "/etc/letsencrypt/live/$domain/privkey.pem" ]]; then
